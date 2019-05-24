@@ -28,6 +28,8 @@ local function in_array(v, tab)
     return i
 end
 
+
+
 local function uuid2()
      local template ="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
      d = io.open("/dev/urandom", "r"):read(4)
