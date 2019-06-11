@@ -92,7 +92,6 @@ while true do
                  if in_array(extension, conf.allow_exts) then
                     file_name = dir..filename
                     file = io.open(file_name, "w+")
-                    
                 end 
 
                 

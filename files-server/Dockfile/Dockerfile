@@ -7,14 +7,15 @@ RUN /usr/local/openresty/luajit/bin/luarocks install lua-resty-upload
 RUN /usr/local/openresty/luajit/bin/luarocks install lua-cjson
 RUN /usr/local/openresty/luajit/bin/luarocks install luafilesystem
 
+# CREATE /etc/nginx/conf.g
+RUN mkdir -p /etc/nginx/conf.g && mkdir -p /etc/nginx/lua
+
 # nginx configuration; 
 COPY conf/nginx-entry.conf /usr/local/openresty/nginx/conf/nginx.conf
 COPY conf/nginx-plus.conf /etc/nginx/conf.d/default.conf
 
 # lua project 
-COPY Lua/upload-resty.lua /etc/nginx/conf.d/
-COPY Lua/zip_files_handle.lua /etc/nginx/conf.d/
-
+COPY Lua/*.lua /etc/nginx/lua/
 # startup.sh 
 
 CMD ["openresty", "-g", "daemon off;"]
