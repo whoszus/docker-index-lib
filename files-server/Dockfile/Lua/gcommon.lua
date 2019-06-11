@@ -27,7 +27,7 @@ function gcommon.uuid2()
 end
 
 -- 获取文件名
-function gcommon.get_filename(str)  
+function gcommon.getFilename(str)  
     local filename = ngx.re.match(str,'(.+)filename="(.+)"(.*)')  
     if filename then   
         return filename[2]  
