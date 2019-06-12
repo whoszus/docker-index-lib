@@ -6,6 +6,9 @@ FROM openresty-ubuntu:xenial
 RUN /usr/local/openresty/luajit/bin/luarocks install lua-resty-upload
 RUN /usr/local/openresty/luajit/bin/luarocks install lua-cjson
 RUN /usr/local/openresty/luajit/bin/luarocks install luafilesystem
+ENV LANG en_US.UTF-8  
+ENV LANGUAGE en_US:en  
+ENV LC_ALL en_US.UTF-8  
 
 # CREATE /etc/nginx/conf.g
 RUN mkdir -p /etc/nginx/conf.g && mkdir -p /etc/nginx/lua
