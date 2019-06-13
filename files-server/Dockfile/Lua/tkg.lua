@@ -17,7 +17,7 @@ end
 -- 生成 uuid
 function tkg.uuid2()
      local template ="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-     d = io.open("/dev/urandom", "r"):read(4)
+     local d = io.open("/dev/urandom", "r"):read(4)
      math.randomseed(os.time() + d:byte(1) + (d:byte(2) * 256) + (d:byte(3) * 65536) + (d:byte(4) * 4294967296))
      return string.gsub(template, "x", function (c)
       local v = (c == "x") and math.random(0, 0xf) or math.random(8, 0xb)
@@ -26,11 +26,15 @@ function tkg.uuid2()
 end
 
 -- 获取文件名
-function tkg.getFilename(str)  
+function tkg.getFilename(str)
+    if not str then
+        return nil
+    end  
     local filename = ngx.re.match(str,'(.+)filename="(.+)"(.*)')  
     if filename then   
         return filename[2]  
-    end  
+    end
+    return nil  
 end
 
 
@@ -248,6 +252,8 @@ function tkg.loadFormInput (form)
         data = {},
         indexes = {}
     }
+    local part_index = 1
+    local part_name, part_value
 
     -- Should be set to 4096 or 8192 for real-world settings
 
@@ -256,16 +262,13 @@ function tkg.loadFormInput (form)
         return nil
     end
 
-
-    local part_index = 1
-    local part_name, part_value
-
     while true do
         local typ, res, err = form:read()
         if not typ then
             return nil -- An error happened, 'failed to read'
         end
-
+        local cjson = require "cjson"
+        -- ngx.log(ngx.ERR,cjson.encode({{typ,res},{"err:",err}}))
         if typ == "header" then
             if stringy.startswith(string.lower(res[1]), "content-disposition") then
                 local parts = stringy.split(res[3], ";")
@@ -302,11 +305,7 @@ function tkg.loadFormInput (form)
     return result
 end
 
-function tkg.getParam(form,param_name)
-    if form ==nil or param_name ==nil then 
-        return nil;
-    end
-    local args = tkg.loadFormInput(form)
+function tkg.getParam(args,param_name)
     local indexes = args.indexes;
     local param_index = indexes[param_name];
     if param_index ~= nil  then 

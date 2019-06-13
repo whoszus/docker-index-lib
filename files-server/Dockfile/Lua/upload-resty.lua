@@ -4,126 +4,169 @@ local cjson = require "cjson"
 local tkg = require "tkg"
 local chunk_size = 4096
 local form = upload:new(chunk_size)
-local conf = {fileHome='/home/tinker/temp/upload/',version=1007,allow_exts={'mpeg','mov','pdf','doc','zip','swf','jar','xls','docx','xlsx','pptx','avi','mp4','tiff','3gp','wmv','apk','exe','tar'}}
+local conf = {fileHome='/home/tinker/temp/upload/',version=1010,allow_exts={'mpeg','mov','pdf','doc','zip','swf','jar','xls','docx','xlsx','pptx','avi','mp4','tiff','3gp','wmv','apk','exe','tar'}}
 
 
 
-local function getFileSecondPath()
-    local file_path  = tkg.getParam(form,"file_path")
-    local 
+local function getFileSecondPath(params)
+    -- local form_data = form
+    local file_path  = tkg.getParam(params,"file_path")
     if file_path ~= nil then 
         return file_path
     end
     return os.date('%Y')..os.date('%m')..os.date('%d')..'/';
 end
 
-
-
-
 local function uploadHandle()
-    -- ngx.log(ngx.ERR,"测试tkg~~")
-    -- ngx.log(ngx.ERR,tkg)
-    local resposeData={code=500,msg='upload fail',desc='上传失败',server_verison= conf.version,file_orign_name= orign_name_array,diskstatus={diskuse=tkg.getdiskuse(),diskspace= tkg.getdiskspace()}}
+    local disk_status = {diskuse=tkg.getdiskuse(),diskspace= tkg.getdiskspace()}
+    local resposeData={code=500,msg="",desc="",server_verison=conf.version,file_orign_name={},diskstatus=disk_status}
     local file
     local file_name
     local file_name_arry = {}
     local orign_name_array ={}
+    local file_cache_name=nil
+    local stringy = require "stringy"
+    local file_entity =nil 
+    local is_file_part_end=false
+    -- form 表单内数据存放位置
+    local result = {
+        data = {},
+        indexes = {}
+    }
+    local part_index = 1
+    local part_name, part_value
+
 
     if not form then
-        resposeData.desc='图片不存在'
+        resposeData.msg="文件不存在"
+        resposeData.code="501"
+        ngx.say(cjson.encode(resposeData))
+        return
     end
-    
     -- test code 
     -- local typ, res, err = form:read()
     -- ngx.say(cjson.encode(tkg.loadFormInput(form,"file_path")))
     -- testcode end 
 
-    
+    -- 拿文件数据和form表单参数
     while true do
-       
         form:set_timeout(1000)
-        local typ, res, err = form:read() 
+        local typ, res, err = form:read()
         if not typ then
-            ngx.say(cjson.encode({code=503, msg='failed to read',desc='读取form失败!'}))
-            ngx.log(ngx.DEBUG,cjson.encode({typ, res}));
+            resposeData.msg="文件不存在"
+            resposeData.code="502"
+            ngx.say(cjson.encode(resposeData))
             return
-        end
-        -- local form_args = tkg.post_form_data(from,err)
-        
+        end        
         if typ == "header" then
             if res[1] == "Content-Disposition" then
-                filename = tkg.getFilename(res[2])
+                local filename = tkg.getFilename(res[2])
                 if filename then
-                    local extension = tkg.get_extension(filename)
-                    if not extension then
-                        -- todo 修改为标准格式；
-                        ngx.say(cjson.encode({code=501, msg='无法获取文件后缀', desc=res}))
-                        return 
-                    end
-
-                    -- 创建文件路径
-                    local dir = conf.fileHome..getFileSecondPath()  
-                    local status = os.execute('mkdir -p '..dir)
-                    if not status then
-                        -- TODO 修改为标准格式
-                        ngx.say(cjson.encode({code=501, msg='创建目录失败'}))
-                        return
-                    end  
-                    
-                    -- 如果文件扩展名命中-- 使用文件原来的名字
-                    if tkg.in_array(extension, conf.allow_exts) then
-                        local file,err=io.open(dir..filename)
-                        if file == nil then 
-                            ngx.log(ngx.ERR,"ERR....filename: "..filename)
-                            file_name = dir..tkg.getFileRealName(filename)
-                            else
-                            -- 文件名重复处理 时间戳_文件名
-                            file.close()
-                            file_name = dir..os.time().."_"..tkg.getFileRealName(filename)
-                            end
-                    else
-                        local file_id = tkg.uuid2()
-                        file_name = dir..file_id.."."..extension
-                    end
-                    
-                    -- 处理文件名返回处理
-                    if file_name then
-                        file = io.open(file_name, "w+")
-                        if not file then
-                            -- TODO 修改为标准格式
-                            ngx.say(cjson.encode({code=500, msg='failed to write file',imgurl=''}))
-                            return
-                        else
-                            file_name = string.gsub(file_name, conf.fileHome, '')
-                            table.insert(file_name_arry,file_name);
-                            table.insert(orign_name_array,filename);
-                        end
-                    end
+                    file_cache_name = filename
                 end
             end
-        elseif typ == "body" then
-            if file then
-                file:write(res)            
+            if stringy.startswith(string.lower(res[1]), "content-disposition") then
+                local parts = stringy.split(res[3], ";")
+                local current_parts = stringy.split(stringy.strip(parts[2]), "=")
+                if string.lower(table.remove(current_parts, 1)) == "name" then
+                    local current_value = stringy.strip(table.remove(current_parts, 1))
+                    part_name = string.sub(current_value, 2, string.len(current_value) - 1)
+                end
             end
-        elseif typ == "part_end" then
-            if file then
-                file:close()
-                file = nil
+        end
+        -- 通过将文件缓存在内存中，等到文件全部到之后写到内存 
+        -- 不合理，要改掉
+        if typ == "body" then
+            part_value = res
+            if not is_file_part_end then
+                if file_entity then 
+                    file_entity = file_entity..res
+                else
+                    file_entity = res                     
+                end 
+            end 
+            
+        end
+        if typ == "part_end" then
+            if part_name ~= nil and part_name ~= "file_entity" then
+                result.data[part_index] = {
+                    name = part_name,
+                    value = part_value
+                }
+                result.indexes[part_name] = part_index
+                -- Reset fields for the next part
+                part_value = nil
+                part_name = nil
+                part_index = part_index + 1
             end
-        elseif typ == "eof" then
-            if file_name then 
-                --todo  修改返回值 
-                resposeData.code=200;
-                ngx.say(cjson.encode(resposeData));
-                ngx.log(ngx.DEBUG,'file_name' .. file_name)
-            else
-                ngx.say(cjson.encode({code=509, msg='form name do not existed',desc='',server_verison= conf.version,file_orign_name= orign_name_array,diskstatus= {diskuse= tkg.getdiskuse(),diskspace= tkg.getdiskspace()}}))
-            end
-            -- 跳出while
+            is_file_part_end = true
+        end
+        if typ == "eof" then
             break
-        else
         end
     end
+
+    if file_cache_name then 
+        local extension = tkg.get_extension(file_cache_name)
+        if not extension then
+            resposeData.msg="无文件后缀"
+            resposeData.code="504"
+            ngx.say(cjson.encode(resposeData))
+            return 
+        end
+        -- 创建文件路径
+        local dir = conf.fileHome..getFileSecondPath(result)  
+        local status = os.execute('mkdir -p '..dir)
+        if not status then
+            resposeData.msg="上传出错，请检查权限"
+            resposeData.code="505"
+            ngx.log(ngx.ERR,"创建文件出错")
+            ngx.say(cjson.encode(resposeData))
+            return
+        end  
+        -- 如果文件扩展名命中-- 使用文件原来的名字
+        if tkg.in_array(extension, conf.allow_exts) then
+            local file,err=io.open(dir..file_cache_name)
+            if file == nil then 
+                file_name = dir..tkg.getFileRealName(file_cache_name)
+            else
+                -- 文件名重复处理 时间戳_文件名
+                file.close()
+                file_name = dir..os.time().."_"..tkg.getFileRealName(file_cache_name)
+            end
+        else
+            local file_id = tkg.uuid2()
+            file_name = dir..file_id.."."..extension
+        end
+        -- 处理文件名返回处理
+        file = io.open(file_name, "w+")
+        if not file then
+            resposeData.msg="上传出错，请检查写入权限"
+            ngx.log(ngx.ERR,"打开文件流失败，无法写入文件流")
+            resposeData.code="506"
+            ngx.say(cjson.encode(resposeData))
+            return
+        end
+        file_name = string.gsub(file_name, conf.fileHome, '')
+        file:write(file_entity)
+        file:close()
+        file = nil 
+        file_cache_name = nil
+        table.insert(file_name_arry,file_name)
+        table.insert(orign_name_array,file_cache_name)
+    end 
+    
+    if file_name then 
+        resposeData.code=200
+        resposeData.desc=file_name_arry
+        resposeData.file_orign_name=orign_name_array
+        ngx.log(ngx.ERR,"上传成功~~")
+
+        ngx.say(cjson.encode(resposeData))
+    else
+        resposeData.msg="文件写入失败"
+        resposeData.code="507"
+        ngx.say(cjson.encode(resposeData))
+    end
 end
--- ngx.say(cjson.encode(_M:uploadHandle()))
 uploadHandle()
