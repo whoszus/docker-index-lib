@@ -6,6 +6,7 @@ FROM openresty-ubuntu:xenial
 RUN /usr/local/openresty/luajit/bin/luarocks install lua-resty-upload
 RUN /usr/local/openresty/luajit/bin/luarocks install lua-cjson
 RUN /usr/local/openresty/luajit/bin/luarocks install luafilesystem
+RUN /usr/local/openresty/luajit/bin/luarocks install stringy
 ENV LANG en_US.UTF-8  
 ENV LANGUAGE en_US:en  
 ENV LC_ALL en_US.UTF-8  
